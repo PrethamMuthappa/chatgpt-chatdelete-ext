@@ -9,42 +9,11 @@ This extension adds checkboxes next to your ChatGPT chats so you can select many
 ---
 
 ## 📸 Screenshots & Examples
+<img width="1470" height="956" alt="Screenshot 2026-09-05 at 9 29 59 PM" src="https://github.com/user-attachments/assets/15b7ea00-205e-47eb-9927-cfc933fc5ce4" />
+<img width="1470" height="956" alt="Screenshot 2026-09-05 at 9 30 06 PM" src="https://github.com/user-attachments/assets/83530600-b5d6-4b24-8d20-379db26f0c0e" />
+<img width="1470" height="956" alt="Screenshot 2026-09-05 at 9 30 27 PM" src="https://github.com/user-attachments/assets/39c86a8f-cebf-4017-aaf6-39c9158dad10" />
 
-> **Add your own images here — this space is for you.**
 
-### Example 1 — Sidebar with checkboxes
-
-<!-- Replace this placeholder with your image -->
-<!-- 1. Take a screenshot of the sidebar with checkboxes -->
-<!-- 2. Save it as docs/images/sidebar.png -->
-<!-- 3. Uncomment the line below -->
-
-<!-- ![Sidebar with checkboxes](docs/images/sidebar.png) -->
-
-```
-[ Your sidebar screenshot here ]
-docs/images/sidebar.png
-```
-
-### Example 2 — Bulk delete in action
-
-<!-- ![Bulk delete](docs/images/bulk-delete.png) -->
-
-```
-[ Your bulk-delete screenshot here ]
-docs/images/bulk-delete.png
-```
-
-### Example 3 — Filter & selection
-
-<!-- ![Filter example](docs/images/filter.png) -->
-
-```
-[ Your filter screenshot here ]
-docs/images/filter.png
-```
-
-> Tip: Create a folder `docs/images/` and drop your `.png` / `.jpg` files there. Then uncomment the `![...](...)` lines above.
 
 ---
 
