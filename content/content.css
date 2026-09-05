@@ -16,6 +16,10 @@
   --cbd-danger-bg: rgba(239, 68, 68, 0.12);
   --cbd-radius: 10px;
   --cbd-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 1px 3px rgba(0, 0, 0, 0.3);
+  --cbd-input-bg: #171717;
+  --cbd-input-text: #ececec;
+  --cbd-input-placeholder: #9a9a9a;
+  --cbd-input-border: #3a3a3a;
 }
 
 /* Conversation row helpers */
@@ -198,21 +202,27 @@
 
 .cbd-input {
   flex: 1;
-  background: #171717;
-  border: 1px solid var(--cbd-border);
-  color: var(--cbd-text);
+  background: var(--cbd-input-bg);
+  border: 1px solid var(--cbd-input-border);
+  color: var(--cbd-input-text);
+  caret-color: var(--cbd-input-text);
   border-radius: 8px;
   padding: 7px 9px;
   font-size: 13px;
   outline: none;
-  transition: border-color 120ms, box-shadow 120ms;
+  transition: border-color 120ms, box-shadow 120ms, background 120ms, color 120ms;
 }
 
-.cbd-input::placeholder { color: #777; }
+.cbd-input::placeholder {
+  color: var(--cbd-input-placeholder);
+  opacity: 1;
+}
 
 .cbd-input:focus {
   border-color: var(--cbd-accent);
   box-shadow: 0 0 0 3px rgba(16,163,127,0.18);
+  background: var(--cbd-input-bg);
+  color: var(--cbd-input-text);
 }
 
 .cbd-controls {
@@ -441,8 +451,29 @@
 .cbd-details summary { cursor: pointer; font-size: 12px; color: var(--cbd-text-muted); }
 .cbd-muted { color: var(--cbd-text-muted); font-size: 12px; }
 
-/* Ensure panel not hidden by ChatGPT's own overflow hidden on body when dialogs open */
-body:has(#cbd-floating-panel) { /* no-op, just for specificity */ }
+/* Toast — Bug4 small status instead of large modal */
+.cbd-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%) translateY(12px);
+  background: #1e1e1e;
+  color: #ececec;
+  border: 1px solid var(--cbd-border);
+  padding: 10px 14px;
+  border-radius: 10px;
+  box-shadow: var(--cbd-shadow);
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  font-size: 13px;
+  z-index: 2147483647;
+  opacity: 0;
+  transition: opacity 200ms, transform 200ms;
+  pointer-events: none;
+}
+.cbd-toast.cbd-toast-show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
 
 /* Light theme support — when ChatGPT is in light mode, adjust */
 html.light #cbd-floating-panel,
@@ -463,4 +494,14 @@ html[data-theme="light"] #cbd-sidebar-controls {
   --cbd-border: #e5e5e5;
   --cbd-text: #171717;
   --cbd-text-muted: #6b6b6b;
+  --cbd-input-bg: #ffffff;
+  --cbd-input-text: #171717;
+  --cbd-input-placeholder: #6b6b6b;
+  --cbd-input-border: #d1d1d1;
+}
+html.light .cbd-toast,
+html[data-theme="light"] .cbd-toast {
+  background: #ffffff;
+  color: #171717;
+  border-color: #e5e5e5;
 }

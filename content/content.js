@@ -30,13 +30,16 @@
   const ext = (typeof browser !== 'undefined' ? browser : chrome);
 
   // ---------------------------------------------------------------------------
-  // Constants & selectors
+  // Constants & selectors — FIXED for Bugs 1,5,6,7
   // ---------------------------------------------------------------------------
 
-  const ATTR_INJECTED = 'data-cbd-injected';
-  const ATTR_CHECKBOX = 'data-cbd-checkbox';
+  // Use required data attributes per bug fixes
+  const ATTR_CHECKBOX = 'data-chat-bulk-checkbox'; // Bug6
+  const ATTR_UI = 'data-chat-bulk-delete-ui'; // Bug2 idempotent
+  const ATTR_ROW = 'data-cbd-row'; // internal row marker, keeps stable mapping
+  const ATTR_INJECTED = 'data-cbd-injected'; // legacy, kept for migration
+  // Keep ATTR_PANEL for backwards compat but not used for floating
   const ATTR_PANEL = 'data-cbd-panel';
-  const ATTR_ROW = 'data-cbd-row';
 
   // Regex to extract conversation id from /c/<id> links. ChatGPT ids are
   // typically uuid-like or 24-char hex; be permissive so we don't miss new formats.
@@ -73,10 +76,10 @@
   const LOG_PREFIX = '[CBD]';
 
   // ---------------------------------------------------------------------------
-  // State
+  // State — Bug5: maintain Set<stableId>, not DOM position
   // ---------------------------------------------------------------------------
 
-  /** @type {Set<string>} conversation ids */
+  /** @type {Set<string>} conversation ids — stable IDs from href */
   const selectedIds = new Set();
   /** @type {Map<string, {id:string, url:string, title:string, anchor:HTMLAnchorElement, row:HTMLElement}>} */
   const detected = new Map();
@@ -350,7 +353,7 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Conversation detection
+  // Conversation detection — Bug7: use stable href ID, never title/index
   // ---------------------------------------------------------------------------
 
   function isConversationLinkElement(anchor) {
@@ -360,9 +363,9 @@
     if (!id) return false;
     // Exclude links that are not in sidebar history.
     // We allow links anywhere initially, but filter out:
-    // - links inside our own panel
+    // - links inside our own panel (data-chat-bulk-delete-ui)
     // - links with /g/ (GPTs), /project, /share etc.
-    if (anchor.closest(`[${ATTR_PANEL}]`)) return false;
+    if (anchor.closest(`[${ATTR_UI}]`) || anchor.closest(`[${ATTR_PANEL}]`)) return false;
     if (href.includes('/g/') || href.includes('/share/') || href.includes('/project')) return false;
     // Must have non-empty title (or at least be visible)
     // Title may be empty for loading placeholders; skip those.
@@ -394,10 +397,6 @@
       const anchor = link;
       const row = findConversationRow(anchor);
 
-      // Distinguish conversation items from folders/navigation:
-      // If row is not found or row is inside header/nav that isn't history, skip?
-      // We can at least ensure row is inside a nav/aside or a list container.
-      // For now accept all with row; the href check already filters most.
       const url = href.startsWith('http') ? href : `https://chatgpt.com${href.startsWith('/') ? href : `/${href}`}`;
 
       found.set(id, {
@@ -413,21 +412,23 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Checkbox injection
+  // Checkbox injection — Bugs 1,5,6 fixed
   // ---------------------------------------------------------------------------
 
   function syncSelectionToUI() {
-    // Update all injected checkboxes to reflect Set state
+    // Update all injected checkboxes to reflect Set state — survives re-render
     const boxes = document.querySelectorAll(`input[${ATTR_CHECKBOX}]`);
     for (const box of boxes) {
-      const id = box.getAttribute(ATTR_CHECKBOX);
-      if (!id) continue;
+      const cid = box.dataset.conversationId;
+      if (!cid) continue;
       // @ts-ignore
-      box.checked = selectedIds.has(id);
+      box.checked = selectedIds.has(cid);
       // Update row highlight
-      const row = box.closest(`[${ATTR_ROW}]`) || box.parentElement;
-      if (row instanceof HTMLElement) {
-        row.classList.toggle('cbd-selected', selectedIds.has(id));
+      const row = box.closest(`[${ATTR_ROW}]`) || box.closest(`[${ATTR_UI}]`)?.parentElement || box.parentElement;
+      // More precise: find row via closest that contains the anchor
+      const actualRow = box.closest('.cbd-row') || box.parentElement;
+      if (actualRow instanceof HTMLElement) {
+        actualRow.classList.toggle('cbd-selected', selectedIds.has(cid));
       }
     }
     updateControlsUI();
@@ -455,8 +456,7 @@
       if (!found.has(id)) {
         if (!info.anchor.isConnected) {
           detected.delete(id);
-          // also deselect if it was deleted externally?
-          // keep selectedIds? Spec says maintain IDs, so don't auto-remove.
+          // keep selectedIds per Bug5 - do not auto-deselect
         }
       }
     }
@@ -466,59 +466,71 @@
       const { anchor, row } = info;
       if (!row) continue;
 
-      // Avoid duplicate: check row already has our checkbox
-      if (row.hasAttribute(ATTR_INJECTED) && row.getAttribute(ATTR_INJECTED) === id) {
-        // Ensure checkbox state is correct
+      // Bug6: do NOT duplicate checkboxes — check exact conversation element
+      // Use required attribute data-chat-bulk-checkbox
+      if (row.querySelector(`[${ATTR_CHECKBOX}]`)) {
+        // Reconcile: ensure existing checkbox reflects current Set (survives re-render)
+        const existing = row.querySelector(`input[${ATTR_CHECKBOX}]`);
+        if (existing instanceof HTMLInputElement) {
+          // Ensure dataset still correct
+          if (existing.dataset.conversationId !== id) {
+            existing.dataset.conversationId = id;
+          }
+          existing.checked = selectedIds.has(id);
+          row.classList.toggle('cbd-selected', selectedIds.has(id));
+        }
+        // Also ensure row has marker
+        if (!row.hasAttribute(ATTR_ROW)) row.setAttribute(ATTR_ROW, id);
         continue;
       }
-      if (row.querySelector(`input[${ATTR_CHECKBOX}="${CSS.escape(id)}"]`)) {
-        row.setAttribute(ATTR_INJECTED, id);
-        continue;
-      }
-      // Also check anchor level duplicate
-      if (anchor.hasAttribute(ATTR_INJECTED)) continue;
+      // Also check anchor level duplicate (in case row was not found correctly)
+      if (anchor.hasAttribute(ATTR_CHECKBOX) || anchor.querySelector(`[${ATTR_CHECKBOX}]`)) continue;
 
-      // Create wrapper + checkbox
+      // Create wrapper + checkbox — Bug1: bind directly to stable conversationId via dataset
       const wrapper = document.createElement('span');
       wrapper.className = 'cbd-checkbox-wrapper';
-      wrapper.setAttribute(ATTR_ROW, id); // mark wrapper
+      wrapper.setAttribute(ATTR_ROW, id); // mark wrapper row
       // Ensure wrapper doesn't capture row click unless checkbox clicked
       wrapper.addEventListener('click', (e) => e.stopPropagation());
 
       const cb = document.createElement('input');
       cb.type = 'checkbox';
       cb.className = 'cbd-checkbox';
-      cb.setAttribute(ATTR_CHECKBOX, id);
+      cb.setAttribute(ATTR_CHECKBOX, 'true');
+      cb.dataset.conversationId = id; // Bug1: stable ID binding
       cb.setAttribute('aria-label', `Select conversation: ${info.title}`);
       cb.checked = selectedIds.has(id);
+      // Bug1 fix: single change handler reading event.currentTarget.dataset.conversationId
+      // Never use document.querySelectorAll(...)[index] inside handler
+      cb.addEventListener('change', (event) => {
+        const target = event.currentTarget;
+        if (!(target instanceof HTMLInputElement)) return;
+        const cid = target.dataset.conversationId;
+        if (!cid) return;
+        event.stopPropagation();
+        if (target.checked) {
+          selectedIds.add(cid);
+        } else {
+          selectedIds.delete(cid);
+        }
+        // Update UI and persist
+        syncSelectionToUI();
+        try {
+          ext.storage.local.set({ cbd_selectedIds: Array.from(selectedIds) });
+        } catch {}
+      });
+      // Only stop propagation on click to prevent opening conversation; do NOT preventDefault
       cb.addEventListener('click', (e) => {
         e.stopPropagation();
-        e.preventDefault();
-        // toggle manually to avoid double
-        const next = !selectedIds.has(id);
-        cb.checked = next;
-        toggleSelection(id, next);
-      });
-      cb.addEventListener('change', (e) => {
-        // Fallback if click not handled
-        e.stopPropagation();
-        toggleSelection(id, cb.checked);
       });
 
       wrapper.appendChild(cb);
 
       // Insert wrapper before anchor, or as first child of row
-      // Try to keep layout: row is often flex with anchor as first child.
-      // Insert before anchor for best visual integration.
       try {
         // If row is the anchor's direct parent, insert before anchor
         if (anchor.parentElement === row) {
           row.insertBefore(wrapper, anchor);
-          // Make row flex if needed
-          if (window.getComputedStyle(row).display !== 'flex') {
-            // Don't force if it breaks; check if we need to set
-            // We use CSS to handle flex, not inline forced.
-          }
         } else {
           // Anchor may be nested deeper; insert wrapper as sibling before anchor's container
           // Find the direct child of row that contains anchor
@@ -550,15 +562,12 @@
       log(`injected ${injectedCount} checkboxes (total detected: ${found.size})`);
     }
 
-    // Clean up checkboxes for deleted rows: remove wrappers where row no longer contains anchor
-    // (handled via MutationObserver re-scan, but we can keep)
-
     updateControlsUI();
     return found.size;
   }
 
   // ---------------------------------------------------------------------------
-  // Filter logic
+  // Filter logic — Bug8: filter only hides, never deselects
   // ---------------------------------------------------------------------------
 
   function applyFilterToRow(row, title) {
@@ -575,10 +584,6 @@
       row.style.display = '';
     } else {
       row.classList.add('cbd-filter-hidden');
-      // We don't use display:none globally because it may break virtual lists.
-      // Instead use our CSS class that hides via opacity + pointer-events + height?
-      // For now use display:none to truly filter, as spec expects filtered view.
-      // Use important via inline? We'll set display none.
       row.style.display = 'none';
     }
   }
@@ -588,12 +593,11 @@
     for (const [, info] of detected) {
       if (info.row) applyFilterToRow(info.row, info.title);
     }
-    // Also update floating panel list if we have a list view (not needed)
     updateControlsUI();
   }
 
   // ---------------------------------------------------------------------------
-  // Controls UI — sidebar injection + floating panel
+  // Controls UI — Bug2: single sidebar UI, idempotent
   // ---------------------------------------------------------------------------
 
   function findSidebarContainer() {
@@ -622,6 +626,8 @@
   }
 
   function createSidebarControls() {
+    // Bug2 idempotent: exactly ONE UI instance
+    if (document.querySelector(`[${ATTR_UI}="true"]`)) return;
     if (document.getElementById('cbd-sidebar-controls')) return;
     const container = findSidebarContainer();
     if (!container) {
@@ -631,6 +637,7 @@
 
     const controls = document.createElement('div');
     controls.id = 'cbd-sidebar-controls';
+    controls.setAttribute(ATTR_UI, 'true');
     controls.setAttribute(ATTR_PANEL, 'sidebar');
     controls.innerHTML = `
       <div class="cbd-sidebar-header">
@@ -683,17 +690,12 @@
       deleteBtn?.addEventListener('click', () => handleDeleteSelected());
 
       filterInput?.addEventListener('input', (e) => {
-        const v = (e.target).value || '';
+        const v = e.target.value || '';
         applyFilter(v);
-        // sync floating filter if present
-        const floatingFilter = document.getElementById('cbd-filter');
-        if (floatingFilter && floatingFilter.value !== v) floatingFilter.value = v;
       });
       filterClear?.addEventListener('click', () => {
         const inp = document.getElementById('cbd-sidebar-filter');
         if (inp) inp.value = '';
-        const floatingFilter = document.getElementById('cbd-filter');
-        if (floatingFilter) floatingFilter.value = '';
         applyFilter('');
       });
 
@@ -704,130 +706,13 @@
     }
   }
 
-  function createFloatingPanel() {
-    if (document.getElementById('cbd-floating-panel')) return;
-
-    const panel = document.createElement('div');
-    panel.id = 'cbd-floating-panel';
-    panel.setAttribute(ATTR_PANEL, 'floating');
-    panel.innerHTML = `
-      <div class="cbd-panel-header" id="cbd-panel-header">
-        <div class="cbd-panel-title">
-          <span class="cbd-panel-icon">☑</span>
-          <span>Chat Bulk Delete</span>
-          <span class="cbd-panel-badge" id="cbd-badge">0</span>
-        </div>
-        <div class="cbd-panel-actions">
-          <button id="cbd-minimize" class="cbd-btn-icon" title="Minimize">—</button>
-          <button id="cbd-close-panel" class="cbd-btn-icon" title="Hide panel (reopen via extension icon)">×</button>
-        </div>
-      </div>
-      <div class="cbd-panel-body" id="cbd-panel-body">
-        <div class="cbd-stats" id="cbd-stats">No conversations selected</div>
-        <div class="cbd-filter-row">
-          <input id="cbd-filter" class="cbd-input" placeholder="Filter conversations…" autocomplete="off" />
-          <button id="cbd-filter-clear" class="cbd-btn-icon" title="Clear filter">×</button>
-        </div>
-        <div class="cbd-controls">
-          <button id="cbd-select-all" class="cbd-btn cbd-btn-secondary">Select All</button>
-          <button id="cbd-clear" class="cbd-btn cbd-btn-secondary">Clear</button>
-          <button id="cbd-select-filtered" class="cbd-btn cbd-btn-secondary" hidden>Select Filtered</button>
-        </div>
-        <button id="cbd-delete" class="cbd-btn cbd-btn-danger cbd-delete-btn" disabled>🗑 Delete Selected</button>
-        <div id="cbd-progress" class="cbd-progress" hidden></div>
-        <div class="cbd-footer-note">Drives the native ChatGPT delete UI. No external requests.</div>
-      </div>
-    `;
-    document.body.appendChild(panel);
-
-    // Make draggable via header
-    makeDraggable(panel, panel.querySelector('#cbd-panel-header'));
-
-    // Wire events
-    panel.querySelector('#cbd-minimize')?.addEventListener('click', () => {
-      const body = panel.querySelector('#cbd-panel-body');
-      if (body) body.hidden = !body.hidden;
-      const btn = panel.querySelector('#cbd-minimize');
-      if (btn) btn.textContent = body.hidden ? '+' : '—';
-    });
-    panel.querySelector('#cbd-close-panel')?.addEventListener('click', () => {
-      panel.style.display = 'none';
-    });
-    panel.querySelector('#cbd-select-all')?.addEventListener('click', () => handleSelectAll());
-    panel.querySelector('#cbd-clear')?.addEventListener('click', () => handleClear());
-    panel.querySelector('#cbd-select-filtered')?.addEventListener('click', () => handleSelectFiltered());
-    panel.querySelector('#cbd-delete')?.addEventListener('click', () => handleDeleteSelected());
-    const filterInput = panel.querySelector('#cbd-filter');
-    filterInput?.addEventListener('input', (e) => {
-      const v = (e.target).value || '';
-      applyFilter(v);
-      const sidebarFilter = document.getElementById('cbd-sidebar-filter');
-      if (sidebarFilter && sidebarFilter.value !== v) sidebarFilter.value = v;
-      // toggle Select Filtered button
-      const selFiltered = document.getElementById('cbd-select-filtered');
-      if (selFiltered) selFiltered.hidden = !v.trim();
-    });
-    panel.querySelector('#cbd-filter-clear')?.addEventListener('click', () => {
-      const inp = document.getElementById('cbd-filter');
-      if (inp) inp.value = '';
-      const sidebarFilter = document.getElementById('cbd-sidebar-filter');
-      if (sidebarFilter) sidebarFilter.value = '';
-      applyFilter('');
-      const selFiltered = document.getElementById('cbd-select-filtered');
-      if (selFiltered) selFiltered.hidden = true;
-    });
-
-    log('floating panel created');
-  }
-
-  function makeDraggable(panel, handle) {
-    if (!handle || !panel) return;
-    let startX = 0, startY = 0, origX = 0, origY = 0, dragging = false;
-    handle.style.cursor = 'move';
-    handle.addEventListener('mousedown', (e) => {
-      // don't drag when clicking buttons
-      if (e.target instanceof HTMLElement && e.target.closest('button')) return;
-      dragging = true;
-      startX = e.clientX;
-      startY = e.clientY;
-      const rect = panel.getBoundingClientRect();
-      origX = rect.left;
-      origY = rect.top;
-      // Switch to left/top positioning if using right/bottom
-      panel.style.right = 'auto';
-      panel.style.bottom = 'auto';
-      panel.style.left = origX + 'px';
-      panel.style.top = origY + 'px';
-      e.preventDefault();
-    });
-    window.addEventListener('mousemove', (e) => {
-      if (!dragging) return;
-      const dx = e.clientX - startX;
-      const dy = e.clientY - startY;
-      panel.style.left = (origX + dx) + 'px';
-      panel.style.top = (origY + dy) + 'px';
-    });
-    window.addEventListener('mouseup', () => { dragging = false; });
-  }
+  // REMOVED: createFloatingPanel and makeDraggable — Bug2 single UI requirement
+  // floating panel deleted completely
 
   function updateControlsUI() {
     const total = detected.size;
     const selected = selectedIds.size;
 
-    // Update floating panel
-    const badge = document.getElementById('cbd-badge');
-    if (badge) badge.textContent = String(selected);
-    const stats = document.getElementById('cbd-stats');
-    if (stats) {
-      if (selected === 0) stats.textContent = total ? `No selection — ${total} conversations loaded` : 'Scanning…';
-      else stats.textContent = `${selected} selected / ${total} loaded`;
-    }
-    const deleteBtn = document.getElementById('cbd-delete');
-    if (deleteBtn) {
-      deleteBtn.disabled = selected === 0 || isDeleting;
-      deleteBtn.textContent = selected ? `🗑 Delete Selected (${selected})` : '🗑 Delete Selected';
-      deleteBtn.classList.toggle('cbd-btn-danger-active', selected > 0);
-    }
     const sidebarCount = document.getElementById('cbd-sidebar-count');
     if (sidebarCount) {
       sidebarCount.textContent = selected ? `${selected} selected` : '0 selected';
@@ -838,66 +723,33 @@
       sidebarDelete.disabled = selected === 0 || isDeleting;
       sidebarDelete.textContent = selected ? `🗑 Delete Selected (${selected})` : '🗑 Delete Selected';
     }
-    // Update title for select filtered button
-    const selFiltered = document.getElementById('cbd-select-filtered');
-    if (selFiltered && filterQuery) {
-      const filteredTitles = Array.from(detected.values()).filter(v => v.title.toLowerCase().includes(filterQuery));
-      selFiltered.textContent = `Select Filtered (${filteredTitles.length})`;
-    }
   }
 
   function updateProgress(current, total, id) {
     const info = detected.get(id);
     const title = info ? info.title : id;
     const text = `Deleting ${current}/${total}: ${title}`;
-    const els = [document.getElementById('cbd-progress'), document.getElementById('cbd-sidebar-progress')];
-    for (const el of els) {
-      if (!el) continue;
-      el.hidden = false;
-      el.textContent = text;
-      el.classList.add('cbd-progress-active');
-    }
-    // Also update delete button to show progress
-    const btn = document.getElementById('cbd-delete');
-    if (btn) btn.textContent = `⏳ ${current}/${total}…`;
+    const el = document.getElementById('cbd-sidebar-progress');
+    if (!el) return;
+    el.hidden = false;
+    el.textContent = text;
+    el.classList.add('cbd-progress-active');
     const sidebarBtn = document.getElementById('cbd-sidebar-delete');
     if (sidebarBtn) sidebarBtn.textContent = `⏳ ${current}/${total}…`;
   }
 
   function clearProgress() {
-    for (const id of ['cbd-progress', 'cbd-sidebar-progress']) {
-      const el = document.getElementById(id);
-      if (el) { el.hidden = true; el.textContent = ''; el.classList.remove('cbd-progress-active'); }
-    }
+    const el = document.getElementById('cbd-sidebar-progress');
+    if (el) { el.hidden = true; el.textContent = ''; el.classList.remove('cbd-progress-active'); }
     updateControlsUI();
   }
 
   // ---------------------------------------------------------------------------
-  // Bulk selection handlers
+  // Bulk selection handlers — Bug9 fixed
   // ---------------------------------------------------------------------------
 
   function handleSelectAll() {
-    // Select all currently detected conversations, respecting filter if active?
-    // Spec says Select All should select all. If filter is active, we débat:
-    // Provide both: Select All selects everything, Select Filtered selects filtered.
-    // Here Select All selects all *visible* (filtered) if filter active? Spec example
-    // shows filter should narrow selection? Safer: if filter active, select only filtered.
-    // We'll do: if filter active, select filtered; otherwise select all.
-    if (filterQuery) {
-      handleSelectFiltered();
-      // Also offer to select all via second click? For now select filtered.
-      // If user wants all, clear filter then Select All.
-      // To handle spec correctly, change: Select All always selects all regardless of filter.
-      // So we need to decide. We'll make Select All select all detected, ignore filter,
-      // and Select Filtered button handles filtered.
-      // For minimal confusion, if filter active and user clicked Select All (floating or sidebar),
-      // we select all filtered? We already handled via Select Filtered.
-      // Let's change behavior: Select All always selects all.
-      // But we already returned filtered? Let's correct:
-      // If called from Select All and filter active, select all anyway — user can use Clear Filter.
-      // We will implement: Select All selects all.
-    }
-    // Select all detected
+    // Bug9: select all detected, not unrelated elements, not filtered subset
     for (const id of detected.keys()) selectedIds.add(id);
     syncSelectionToUI();
     try { ext.storage.local.set({ cbd_selectedIds: Array.from(selectedIds) }); } catch {}
@@ -918,13 +770,12 @@
 
   function handleClear() {
     selectedIds.clear();
-    // clear filter as well? No, keep filter
     syncSelectionToUI();
     try { ext.storage.local.set({ cbd_selectedIds: [] }); } catch {}
   }
 
   // ---------------------------------------------------------------------------
-  // Confirmation & summary modals (our own, not ChatGPT's)
+  // Confirmation & toast (Bug4: remove large Deletion Complete modal)
   // ---------------------------------------------------------------------------
 
   function createOverlay() {
@@ -932,7 +783,6 @@
     overlay.id = 'cbd-overlay';
     overlay.className = 'cbd-overlay';
     overlay.setAttribute(ATTR_PANEL, 'overlay');
-    // Clicking overlay background cancels (but not clicking modal)
     overlay.addEventListener('click', (e) => {
       if (e.target === overlay) overlay.remove();
     });
@@ -953,7 +803,6 @@
         ? `<div class="cbd-warning cbd-warning-strong">⚠️ You are about to permanently delete <strong>${count}</strong> conversations. This action cannot be undone.</div>`
         : '';
 
-      // For large selections, require checkbox confirmation
       const checkboxHtml = isLarge
         ? `<label class="cbd-confirm-check"><input type="checkbox" id="cbd-confirm-check" /> I understand this will permanently delete ${count} conversations</label>`
         : '';
@@ -973,7 +822,6 @@
       `;
       overlay.appendChild(modal);
 
-      // Show preview of titles (first 6)
       const listEl = modal.querySelector('#cbd-modal-list');
       if (listEl) {
         const titles = Array.from(selectedIds).slice(0, 6).map(id => {
@@ -1018,12 +866,10 @@
 
       okBtn?.addEventListener('click', () => finish(true));
       cancelBtn?.addEventListener('click', () => finish(false));
-      // Escape closes
       const onKey = (e) => {
         if (e.key === 'Escape') { window.removeEventListener('keydown', onKey); finish(false); }
       };
       window.addEventListener('keydown', onKey);
-      // Focus OK if not large, else focus checkbox
       setTimeout(() => {
         if (isLarge && check) check.focus();
         else okBtn?.focus();
@@ -1031,61 +877,21 @@
     });
   }
 
-  function showSummaryModal(succeeded, failed, cancelled) {
-    const overlay = createOverlay();
-    const modal = document.createElement('div');
-    modal.className = 'cbd-modal';
-    modal.setAttribute('role', 'dialog');
-    modal.setAttribute('aria-modal', 'true');
-
-    const failedList = failed.length
-      ? `<ul class="cbd-summary-list">${failed.map(f => `<li><strong>${escapeHtml(f.title || f.id)}</strong><br><span class="cbd-muted">${escapeHtml(f.error || 'Unknown error')}</span></li>`).join('')}</ul>`
-      : '<p class="cbd-muted">No failures.</p>';
-
-    const succeededList = succeeded.length && failed.length
-      ? `<details class="cbd-details"><summary>Show successful (${succeeded.length})</summary><ul class="cbd-summary-list">${succeeded.map(id => {
-            const info = detected.get(id);
-            return `<li>${escapeHtml(info ? info.title : id)}</li>`;
-          }).join('')}</ul></details>`
-      : '';
-
-    modal.innerHTML = `
-      <div class="cbd-modal-header">${cancelled ? 'Deletion Cancelled' : 'Deletion Complete'}</div>
-      <div class="cbd-modal-body">
-        <div class="cbd-summary-grid">
-          <div class="cbd-summary-card cbd-summary-success">
-            <div class="cbd-summary-number">${succeeded.length}</div>
-            <div class="cbd-summary-label">Successfully deleted</div>
-          </div>
-          <div class="cbd-summary-card ${failed.length ? 'cbd-summary-error' : ''}">
-            <div class="cbd-summary-number">${failed.length}</div>
-            <div class="cbd-summary-label">Failed</div>
-          </div>
-        </div>
-        ${failed.length ? `<div class="cbd-summary-section"><h4>Failed conversations</h4>${failedList}</div>` : ''}
-        ${succeededList}
-        <p class="cbd-muted" style="margin-top:12px;">Tip: If some failed, scroll the sidebar to ensure they are loaded, then try again. ChatGPT may have changed its UI — see README debugging.</p>
-      </div>
-      <div class="cbd-modal-footer">
-        <button id="cbd-summary-close" class="cbd-btn cbd-btn-primary">Close</button>
-        ${failed.length ? '<button id="cbd-summary-retry" class="cbd-btn cbd-btn-secondary">Retry failed</button>' : ''}
-      </div>
-    `;
-    overlay.appendChild(modal);
-
-    modal.querySelector('#cbd-summary-close')?.addEventListener('click', () => overlay.remove());
-    modal.querySelector('#cbd-summary-retry')?.addEventListener('click', () => {
-      overlay.remove();
-      // Re-select failed ids and retry
-      selectedIds.clear();
-      for (const f of failed) selectedIds.add(f.id);
-      syncSelectionToUI();
-      handleDeleteSelected();
-    });
-    // Escape
-    const onKey = (e) => { if (e.key === 'Escape') { window.removeEventListener('keydown', onKey); overlay.remove(); } };
-    window.addEventListener('keydown', onKey);
-    setTimeout(() => modal.querySelector('#cbd-summary-close')?.focus(), 50);
+  // Bug4: small toast instead of large modal
+  function showToast(text) {
+    let toast = document.getElementById('cbd-toast');
+    if (toast) toast.remove();
+    toast = document.createElement('div');
+    toast.id = 'cbd-toast';
+    toast.className = 'cbd-toast';
+    toast.textContent = text;
+    document.body.appendChild(toast);
+    // trigger animation
+    requestAnimationFrame(() => toast.classList.add('cbd-toast-show'));
+    setTimeout(() => {
+      toast.classList.remove('cbd-toast-show');
+      setTimeout(() => toast.remove(), 300);
+    }, 3000);
   }
 
   function escapeHtml(str) {
@@ -1095,28 +901,24 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Deletion — sequential, cautious
+  // Deletion — sequential, cautious — Bug10 preserved
   // ---------------------------------------------------------------------------
 
   async function deleteSingleConversation(id) {
     const info = detected.get(id);
     const title = info ? info.title : id;
 
-    // 1) Locate anchor
     let anchor = findConversationAnchor(id);
     if (!anchor) {
       throw new Error(`Conversation not found in sidebar. Scroll to load it, then try again. (id: ${id})`);
     }
-    // Ensure anchor is scrolled into view (helps with virtualized lists)
     anchor.scrollIntoView({ block: 'nearest', behavior: 'instant' });
     await sleep(80);
 
-    // 2) Find row & options button
     const row = findConversationRow(anchor);
     if (!row) throw new Error(`Row container not found for "${title}"`);
     let optionsButton = findOptionsButton(row, anchor);
     if (!optionsButton) {
-      // Try broader search near anchor
       const near = anchor.closest('li, div')?.querySelector('button');
       if (near) optionsButton = near;
     }
@@ -1124,18 +926,14 @@
       throw new Error(`Options button (⋯) not found for "${title}". ChatGPT UI may have changed. See README debugging.`);
     }
 
-    // 3) Reveal & click options
     await revealOptionsButton(row);
     await sleep(100);
-    // Re-find in case DOM changed after hover
     optionsButton = findOptionsButton(row, anchor) || optionsButton;
     if (!optionsButton || !optionsButton.isConnected) throw new Error(`Options button became detached for "${title}"`);
-    // Ensure visible
     optionsButton.style.opacity = '1';
     optionsButton.click();
     log(`clicked options for ${title} (${id})`);
 
-    // 4) Wait for menu + find Delete item
     await sleep(180);
     let deleteItem = null;
     const menuStart = performance.now();
@@ -1149,15 +947,12 @@
       await sleep(150);
       throw new Error(`Delete menu item not found for "${title}". The options menu did not appear.`);
     }
-    // Verify deleteItem is inside an open menu
-    // Click it
     deleteItem.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }));
     await sleep(40);
     if (deleteItem instanceof HTMLElement) deleteItem.click();
     else deleteItem.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     log(`clicked Delete for ${title}`);
 
-    // 5) Wait for confirmation modal
     await sleep(150);
     let modal = null;
     const modalStart = performance.now();
@@ -1167,8 +962,6 @@
       await sleep(90);
     }
     if (!modal) {
-      // Maybe menu click already triggered immediate deletion (Grok does this, but ChatGPT requires confirm)
-      // Check if anchor disappeared
       await sleep(400);
       if (!findConversationAnchor(id)) {
         log(`no confirm modal but anchor gone — treating as success for ${title}`);
@@ -1178,7 +971,6 @@
       throw new Error(`Confirmation dialog not found for "${title}".`);
     }
 
-    // 6) Find & click confirm button
     let confirmBtn = findConfirmButton(modal);
     if (!confirmBtn) {
       dispatchEscape();
@@ -1188,12 +980,10 @@
     if (confirmBtn.disabled || confirmBtn.getAttribute('aria-disabled') === 'true') {
       throw new Error(`Confirm button stayed disabled for "${title}".`);
     }
-    // Extra safety: ensure modal still open
     if (!modal.isConnected) throw new Error(`Confirmation dialog closed unexpectedly for "${title}".`);
     confirmBtn.click();
     log(`clicked Confirm for ${title}`);
 
-    // 7) Wait for modal to close
     const modalGone = await waitUntilGone(() => findConfirmModal(), 3500);
     if (!modalGone) {
       log(`warning: modal still present after confirm for ${title}, pressing Escape`);
@@ -1201,20 +991,12 @@
       await sleep(300);
     }
 
-    // 8) Wait for deletion to complete — anchor removal or grayed state
-    // ChatGPT turns row gray while API call in progress, then removes after ~1-2s.
-    // We wait for anchor to disappear, but don't fail if it stays (maybe slow).
     await sleep(400);
     const anchorGone = await waitUntilGone(() => findConversationAnchor(id), 3500);
     if (!anchorGone) {
-      // Check if row is still there but maybe marked as deleting?
       const stillAnchor = findConversationAnchor(id);
       if (stillAnchor) {
         log(`anchor still present after confirm for ${title} — may be slow; treating as failure?`);
-        // Consider it still success if modal gone, but warn caller
-        // For reliability, require anchor gone; otherwise record failure
-        // Let's check if row has opacity 0.5 or similar? Not reliable.
-        // We'll do one more wait:
         await sleep(800);
         if (findConversationAnchor(id)) {
           throw new Error(`Conversation still present after deletion (maybe not deleted): "${title}"`);
@@ -1222,7 +1004,6 @@
       }
     }
 
-    // Verify: ensure menu closed
     dispatchEscape();
     await sleep(200);
   }
@@ -1235,22 +1016,19 @@
     const succeeded = [];
     const failed = [];
 
-    // Add cancel button to progress areas
     const addCancel = () => {
-      const areas = [document.getElementById('cbd-progress'), document.getElementById('cbd-sidebar-progress')];
-      for (const area of areas) {
-        if (!area || area.querySelector('.cbd-cancel-btn')) continue;
-        const cancelBtn = document.createElement('button');
-        cancelBtn.textContent = 'Cancel';
-        cancelBtn.className = 'cbd-btn cbd-btn-secondary cbd-cancel-btn';
-        cancelBtn.addEventListener('click', () => {
-          cancelRequested = true;
-          cancelBtn.textContent = 'Cancelling…';
-          cancelBtn.disabled = true;
-        });
-        area.appendChild(document.createElement('br'));
-        area.appendChild(cancelBtn);
-      }
+      const area = document.getElementById('cbd-sidebar-progress');
+      if (!area || area.querySelector('.cbd-cancel-btn')) return;
+      const cancelBtn = document.createElement('button');
+      cancelBtn.textContent = 'Cancel';
+      cancelBtn.className = 'cbd-btn cbd-btn-secondary cbd-cancel-btn';
+      cancelBtn.addEventListener('click', () => {
+        cancelRequested = true;
+        cancelBtn.textContent = 'Cancelling…';
+        cancelBtn.disabled = true;
+      });
+      area.appendChild(document.createElement('br'));
+      area.appendChild(cancelBtn);
     };
 
     for (let i = 0; i < ids.length; i++) {
@@ -1265,23 +1043,16 @@
       try {
         await deleteSingleConversation(id);
         succeeded.push(id);
-        // Remove from selection & detected after success
         selectedIds.delete(id);
-        // The anchor should be gone; but keep detected map cleanup to observer
         log(`✓ deleted ${info ? info.title : id} (${i + 1}/${ids.length})`);
-        // Small delay between deletions to let React settle
         await sleep(650);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         log(`✗ failed to delete ${info ? info.title : id}: ${msg}`);
         failed.push({ id, title: info ? info.title : id, error: msg });
-        // Close any stray menus/modals before next
         dispatchEscape();
         await sleep(500);
-        // Continue to next — but if many failures (>3) maybe UI changed, abort?
-        // We'll continue anyway; caller will show summary.
       }
-      // Persist selection after each deletion
       try { ext.storage.local.set({ cbd_selectedIds: Array.from(selectedIds) }); } catch {}
       syncSelectionToUI();
     }
@@ -1289,9 +1060,6 @@
     isDeleting = false;
     clearProgress();
     syncSelectionToUI();
-
-    // Remove empty filter hides? Re-apply
-    // After deletions, trigger rescan
     scheduleScan(0);
 
     const cancelled = cancelRequested;
@@ -1310,16 +1078,17 @@
     if (!confirmed) return;
 
     const ids = Array.from(selectedIds);
-    // Double-check IDs still correspond to detected? Keep as is — user may have selected via filter
     log(`starting bulk delete of ${ids.length} conversations`);
     const result = await bulkDeleteSequential(ids);
 
-    // Show summary
-    showSummaryModal(result.succeeded, result.failed, result.cancelled);
-
-    // After success, clear selection for succeeded? Already removed.
-    // If all succeeded, selected should be empty.
-    // Trigger rescan
+    // Bug4: no large modal, just toast + update count
+    if (result.succeeded.length) {
+      showToast(`${result.succeeded.length} conversation${result.succeeded.length===1?'':'s'} deleted${result.failed.length? `, ${result.failed.length} failed`:''}`);
+    } else if (result.failed.length) {
+      showToast(`${result.failed.length} deletion${result.failed.length===1?'':'s'} failed`);
+    } else if (result.cancelled) {
+      showToast('Deletion cancelled');
+    }
     scheduleScan(500);
   }
 
@@ -1332,8 +1101,7 @@
     scanTimer = setTimeout(() => {
       try {
         injectCheckboxes();
-        // If sidebar controls not yet injected, try again
-        if (!document.getElementById('cbd-sidebar-controls')) {
+        if (!document.querySelector(`[${ATTR_UI}="true"]`)) {
           createSidebarControls();
         }
       } catch (e) {
@@ -1345,17 +1113,15 @@
   function setupObserver() {
     if (observer) observer.disconnect();
     observer = new MutationObserver((mutations) => {
-      // Ignore mutations caused by our own UI
       let shouldScan = false;
       for (const mut of mutations) {
         const target = mut.target;
         if (target instanceof HTMLElement) {
-          if (target.closest(`[${ATTR_PANEL}]`) || target.closest(`[${ATTR_CHECKBOX}]`) || target.closest('.cbd-')) {
-            // Check if added nodes are our checkboxes — ignore
+          if (target.closest(`[${ATTR_UI}]`) || target.closest(`[${ATTR_CHECKBOX}]`) || target.closest('.cbd-')) {
             if (mut.addedNodes.length) {
               let isOurNode = false;
               for (const n of mut.addedNodes) {
-                if (n instanceof HTMLElement && (n.hasAttribute(ATTR_CHECKBOX) || n.hasAttribute(ATTR_PANEL) || n.classList.contains('cbd-checkbox-wrapper'))) {
+                if (n instanceof HTMLElement && (n.hasAttribute(ATTR_CHECKBOX) || n.hasAttribute(ATTR_UI) || n.classList.contains('cbd-checkbox-wrapper'))) {
                   isOurNode = true; break;
                 }
               }
@@ -1365,7 +1131,6 @@
             }
           }
         }
-        // If any added node contains a conversation link, we should scan
         for (const node of [...mut.addedNodes]) {
           if (node instanceof HTMLElement) {
             if (node.matches && node.matches(SELECTORS.conversationLink)) { shouldScan = true; break; }
@@ -1373,7 +1138,6 @@
           }
         }
         if (shouldScan) break;
-        // Also if removed nodes contained conversation links, scan to update counts
         for (const node of [...mut.removedNodes]) {
           if (node instanceof HTMLElement) {
             if (node.matches && node.matches(SELECTORS.conversationLink)) { shouldScan = true; break; }
@@ -1381,21 +1145,17 @@
           }
         }
         if (shouldScan) break;
-        // Attribute changes on links? treat as scan trigger but throttled
         if (mut.type === 'attributes' && mut.target instanceof HTMLElement) {
           if (mut.target.matches(SELECTORS.conversationLink)) { shouldScan = true; break; }
         }
       }
-      // Fallback: if we haven't detected any conversations yet, scan periodically anyway
       if (!shouldScan && detected.size === 0) {
-        // Check if new links appeared without mutation? (unlikely)
         const links = document.querySelectorAll(SELECTORS.conversationLink);
         if (links.length > 0) shouldScan = true;
       }
       if (shouldScan) scheduleScan(250);
     });
 
-    // Observe documentElement with sensible filters — avoid observing every characterData mutation
     observer.observe(document.documentElement, {
       childList: true,
       subtree: true,
@@ -1403,7 +1163,6 @@
       characterData: false
     });
 
-    // Throttled scroll listener for lazy-loaded sidebar: when user scrolls sidebar, new items may load
     const sidebar = findSidebarContainer();
     if (sidebar) {
       sidebar.addEventListener('scroll', () => scheduleScan(300), { passive: true });
@@ -1423,32 +1182,22 @@
         }
       });
     } catch {}
-    // Also restore panel visibility
-    try {
-      ext.storage.local.get(['cbd_panelHidden'], (res) => {
-        if (res && res.cbd_panelHidden) {
-          const p = document.getElementById('cbd-floating-panel');
-          if (p) p.style.display = 'none';
-        }
-      });
-    } catch {}
   }
 
-  // Handle messages from popup
   function setupMessageListener() {
     try {
       ext.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         if (!msg || !msg.type) return;
         switch (msg.type) {
           case 'CBD_TOGGLE_PANEL': {
-            const panel = document.getElementById('cbd-floating-panel');
-            if (panel) {
+            // Bug2: floating panel removed, toggle sidebar UI instead
+            const panel = document.querySelector(`[${ATTR_UI}="true"]`);
+            if (panel instanceof HTMLElement) {
               const willShow = panel.style.display === 'none';
               panel.style.display = willShow ? '' : 'none';
-              try { ext.storage.local.set({ cbd_panelHidden: !willShow }); } catch {}
               sendResponse({ visible: willShow });
             } else {
-              createFloatingPanel();
+              createSidebarControls();
               sendResponse({ visible: true });
             }
             break;
@@ -1476,7 +1225,7 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Init
+  // Init — idempotent
   // ---------------------------------------------------------------------------
 
   function init() {
@@ -1487,17 +1236,13 @@
     window.__CBD_INITIALIZED = true;
 
     log('initializing Chat Bulk Delete…');
-    // Create UI
-    createFloatingPanel();
+    // Only sidebar UI — no floating panel (Bug2)
     createSidebarControls();
-    // Initial scan
     injectCheckboxes();
-    // Observer
     setupObserver();
     setupMessageListener();
     restoreSelectionFromStorage();
 
-    // Periodic re-scan as safety net for virtualized lists (every 2s for first 10s, then 5s)
     let quickScans = 0;
     const quickInterval = setInterval(() => {
       quickScans++;
@@ -1508,34 +1253,28 @@
       if (!isDeleting) injectCheckboxes();
     }, 5000);
 
-    // Handle SPA navigation (ChatGPT uses pushState without full reload)
     let lastUrl = location.href;
     setInterval(() => {
       if (location.href !== lastUrl) {
         lastUrl = location.href;
         log('navigation detected to', lastUrl);
         scheduleScan(500);
-        // Re-inject sidebar controls if nav changed
         setTimeout(() => {
-          if (!document.getElementById('cbd-sidebar-controls')) createSidebarControls();
+          if (!document.querySelector(`[${ATTR_UI}="true"]`)) createSidebarControls();
         }, 800);
       }
     }, 1000);
 
-    // Keyboard shortcut: Ctrl+Shift+D toggles panel? optional, not required
     log('ready — detected', detected.size, 'conversations');
   }
 
-  // Wait for DOM ready
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
   } else {
-    // Delay slightly to let ChatGPT's React hydrate
     setTimeout(init, 800);
   }
-  // Also try again after window load
   window.addEventListener('load', () => setTimeout(() => {
-    if (!document.getElementById('cbd-floating-panel')) init();
+    if (!document.querySelector(`[${ATTR_UI}="true"]`)) init();
     else scheduleScan(0);
   }, 1000));
 
