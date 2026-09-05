@@ -1,0 +1,466 @@
+/* Chat Bulk Delete — injected styles
+   Namespaced with .cbd-* to avoid colliding with ChatGPT's Tailwind.
+   Keep z-index high for floating panel but not absurd.
+*/
+
+:root {
+  --cbd-bg: #212121;
+  --cbd-bg-hover: #2a2a2a;
+  --cbd-bg-active: #303030;
+  --cbd-border: #3a3a3a;
+  --cbd-text: #ececec;
+  --cbd-text-muted: #9a9a9a;
+  --cbd-accent: #10a37f;
+  --cbd-danger: #ef4444;
+  --cbd-danger-hover: #dc2626;
+  --cbd-danger-bg: rgba(239, 68, 68, 0.12);
+  --cbd-radius: 10px;
+  --cbd-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+/* Conversation row helpers */
+.cbd-row {
+  position: relative;
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+}
+
+.cbd-checkbox-wrapper {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  margin-left: 4px;
+}
+
+.cbd-checkbox {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--cbd-accent);
+  cursor: pointer;
+  margin: 0;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.cbd-row.cbd-selected {
+  background: rgba(16, 163, 127, 0.08) !important;
+  border-radius: 8px;
+}
+
+.cbd-filter-hidden {
+  /* hidden via JS display:none as well */
+}
+
+/* Sidebar controls injected near chat list */
+#cbd-sidebar-controls {
+  margin: 8px 8px 10px 8px;
+  padding: 10px;
+  background: var(--cbd-bg);
+  border: 1px solid var(--cbd-border);
+  border-radius: var(--cbd-radius);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--cbd-text);
+}
+
+.cbd-sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.cbd-sidebar-title { font-weight: 600; }
+
+.cbd-sidebar-count {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--cbd-text-muted);
+  background: var(--cbd-bg-active);
+  padding: 2px 6px;
+  border-radius: 999px;
+}
+
+.cbd-sidebar-search {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.cbd-sidebar-search .cbd-input { flex: 1; }
+
+.cbd-sidebar-actions {
+  display: flex;
+  gap: 6px;
+}
+
+/* Floating panel */
+#cbd-floating-panel {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  width: 320px;
+  max-width: calc(100vw - 32px);
+  max-height: min(70vh, 520px);
+  display: flex;
+  flex-direction: column;
+  background: var(--cbd-bg);
+  border: 1px solid var(--cbd-border);
+  border-radius: 14px;
+  box-shadow: var(--cbd-shadow);
+  z-index: 2147483646; /* just below our overlay */
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--cbd-text);
+  overflow: hidden;
+}
+
+.cbd-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: var(--cbd-bg-hover);
+  border-bottom: 1px solid var(--cbd-border);
+  user-select: none;
+}
+
+.cbd-panel-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.cbd-panel-icon {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--cbd-accent);
+  color: white;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.cbd-panel-badge {
+  background: var(--cbd-bg-active);
+  color: var(--cbd-text);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 999px;
+  min-width: 18px;
+  text-align: center;
+  border: 1px solid var(--cbd-border);
+}
+
+.cbd-panel-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.cbd-panel-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.cbd-stats {
+  font-size: 12px;
+  color: var(--cbd-text-muted);
+  background: rgba(255,255,255,0.04);
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.06);
+}
+
+.cbd-filter-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.cbd-input {
+  flex: 1;
+  background: #171717;
+  border: 1px solid var(--cbd-border);
+  color: var(--cbd-text);
+  border-radius: 8px;
+  padding: 7px 9px;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 120ms, box-shadow 120ms;
+}
+
+.cbd-input::placeholder { color: #777; }
+
+.cbd-input:focus {
+  border-color: var(--cbd-accent);
+  box-shadow: 0 0 0 3px rgba(16,163,127,0.18);
+}
+
+.cbd-controls {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.cbd-footer-note {
+  font-size: 11px;
+  color: var(--cbd-text-muted);
+  text-align: center;
+  margin-top: 2px;
+  line-height: 1.3;
+}
+
+/* Buttons */
+.cbd-btn {
+  appearance: none;
+  border: 1px solid var(--cbd-border);
+  background: var(--cbd-bg-active);
+  color: var(--cbd-text);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 120ms, border-color 120ms, transform 60ms;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  user-select: none;
+}
+
+.cbd-btn:hover { background: #353535; border-color: #4a4a4a; }
+.cbd-btn:active { transform: scale(0.98); }
+.cbd-btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+
+.cbd-btn-secondary { flex: 1; }
+
+.cbd-btn-primary {
+  background: var(--cbd-accent);
+  border-color: var(--cbd-accent);
+  color: white;
+}
+.cbd-btn-primary:hover { background: #0d8c6d; }
+
+.cbd-btn-danger {
+  background: var(--cbd-danger-bg);
+  border-color: rgba(239,68,68,0.35);
+  color: #fecaca;
+  width: 100%;
+  font-weight: 600;
+}
+.cbd-btn-danger:hover:not(:disabled) {
+  background: rgba(239,68,68,0.22);
+  border-color: var(--cbd-danger);
+  color: white;
+}
+.cbd-btn-danger:disabled {
+  opacity: 0.4;
+}
+.cbd-btn-danger-active {
+  background: var(--cbd-danger) !important;
+  color: white !important;
+  border-color: var(--cbd-danger) !important;
+}
+.cbd-btn-danger-active:hover { background: var(--cbd-danger-hover) !important; }
+
+.cbd-btn-icon {
+  appearance: none;
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--cbd-text-muted);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+}
+.cbd-btn-icon:hover { background: var(--cbd-bg-active); color: var(--cbd-text); }
+
+.cbd-delete-btn { margin-top: 2px; }
+
+/* Progress */
+.cbd-progress {
+  font-size: 12px;
+  color: var(--cbd-text);
+  background: rgba(16,163,127,0.12);
+  border: 1px solid rgba(16,163,127,0.28);
+  padding: 8px 10px;
+  border-radius: 8px;
+  line-height: 1.4;
+  word-break: break-word;
+}
+.cbd-progress-active { animation: cbd-pulse 1.2s ease-in-out infinite; }
+
+@keyframes cbd-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.78; }
+}
+
+.cbd-cancel-btn { margin-top: 8px; width: 100%; }
+
+/* Overlay & modals (our confirmation, not ChatGPT's) */
+.cbd-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.58);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2147483647;
+  padding: 16px;
+}
+
+.cbd-modal {
+  width: min(480px, 100%);
+  max-height: min(80vh, 600px);
+  overflow: auto;
+  background: #1e1e1e;
+  border: 1px solid var(--cbd-border);
+  border-radius: 14px;
+  box-shadow: var(--cbd-shadow);
+  color: var(--cbd-text);
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  animation: cbd-modal-in 140ms ease-out;
+}
+
+@keyframes cbd-modal-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.99); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.cbd-modal-header {
+  padding: 14px 16px 10px;
+  font-weight: 600;
+  font-size: 15px;
+  border-bottom: 1px solid var(--cbd-border);
+}
+
+.cbd-modal-body {
+  padding: 14px 16px;
+  font-size: 13px;
+  line-height: 1.5;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cbd-modal-body p { margin: 0; }
+
+.cbd-modal-preview {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 140px;
+  overflow-y: auto;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 8px;
+  padding: 8px 10px 8px 22px;
+  font-size: 12px;
+}
+.cbd-modal-preview li { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.cbd-modal-footer {
+  padding: 12px 16px 14px;
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  border-top: 1px solid var(--cbd-border);
+}
+
+.cbd-warning {
+  background: rgba(239,68,68,0.12);
+  border: 1px solid rgba(239,68,68,0.28);
+  color: #fecaca;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+.cbd-warning-strong { font-weight: 500; }
+
+.cbd-confirm-check {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 12px;
+  background: rgba(255,255,255,0.04);
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.cbd-confirm-check input { margin-top: 2px; }
+
+.cbd-summary-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.cbd-summary-card {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--cbd-border);
+  border-radius: 10px;
+  padding: 10px;
+  text-align: center;
+}
+.cbd-summary-card.cbd-summary-success { border-color: rgba(16,163,127,0.35); }
+.cbd-summary-card.cbd-summary-error { border-color: rgba(239,68,68,0.4); background: rgba(239,68,68,0.08); }
+.cbd-summary-number { font-size: 22px; font-weight: 700; }
+.cbd-summary-label { font-size: 11px; color: var(--cbd-text-muted); margin-top: 2px; }
+.cbd-summary-section h4 { margin: 10px 0 6px; font-size: 13px; }
+.cbd-summary-list { margin: 0; padding-left: 18px; font-size: 12px; display: flex; flex-direction: column; gap: 6px; }
+.cbd-summary-list li { word-break: break-word; }
+.cbd-details { margin-top: 8px; }
+.cbd-details summary { cursor: pointer; font-size: 12px; color: var(--cbd-text-muted); }
+.cbd-muted { color: var(--cbd-text-muted); font-size: 12px; }
+
+/* Ensure panel not hidden by ChatGPT's own overflow hidden on body when dialogs open */
+body:has(#cbd-floating-panel) { /* no-op, just for specificity */ }
+
+/* Light theme support — when ChatGPT is in light mode, adjust */
+html.light #cbd-floating-panel,
+html[data-theme="light"] #cbd-floating-panel {
+  --cbd-bg: #ffffff;
+  --cbd-bg-hover: #f5f5f5;
+  --cbd-bg-active: #efefef;
+  --cbd-border: #e5e5e5;
+  --cbd-text: #171717;
+  --cbd-text-muted: #6b6b6b;
+  --cbd-shadow: 0 8px 28px rgba(0,0,0,0.14), 0 1px 3px rgba(0,0,0,0.1);
+}
+html.light #cbd-sidebar-controls,
+html[data-theme="light"] #cbd-sidebar-controls {
+  --cbd-bg: #ffffff;
+  --cbd-bg-hover: #f5f5f5;
+  --cbd-bg-active: #efefef;
+  --cbd-border: #e5e5e5;
+  --cbd-text: #171717;
+  --cbd-text-muted: #6b6b6b;
+}

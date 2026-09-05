@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Chat Bulk Delete</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <div class="popup">
+    <header class="popup-header">
+      <div class="popup-title">
+        <span class="popup-icon">☑</span>
+        <span>Chat Bulk Delete</span>
+      </div>
+      <span class="popup-version">v1.0.0</span>
+    </header>
+
+    <div class="popup-body">
+      <div id="status" class="status">
+        <div class="status-line">
+          <span class="status-dot" id="status-dot"></span>
+          <span id="status-text">Checking…</span>
+        </div>
+        <div class="status-detail" id="status-detail">Open chatgpt.com to use the extension.</div>
+      </div>
+
+      <div class="stats">
+        <div class="stat">
+          <div class="stat-number" id="stat-detected">—</div>
+          <div class="stat-label">Loaded</div>
+        </div>
+        <div class="stat">
+          <div class="stat-number" id="stat-selected">—</div>
+          <div class="stat-label">Selected</div>
+        </div>
+        <div class="stat">
+          <div class="stat-number" id="stat-status">—</div>
+          <div class="stat-label">State</div>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button id="btn-toggle-panel" class="btn btn-primary">Show / Hide Panel</button>
+        <div class="actions-row">
+          <button id="btn-select-all" class="btn btn-secondary">Select All</button>
+          <button id="btn-clear" class="btn btn-secondary">Clear</button>
+          <button id="btn-rescan" class="btn btn-secondary" title="Re-scan the sidebar for conversations">Rescan</button>
+        </div>
+      </div>
+
+      <div class="tips">
+        <strong>How to use:</strong>
+        <ol>
+          <li>Open <code>chatgpt.com</code> and wait for the sidebar to load.</li>
+          <li>Checkboxes appear next to each conversation.</li>
+          <li>Use the floating panel (or sidebar controls) to Select All / Filter / Delete.</li>
+          <li>Deleting drives the native ChatGPT UI — no tokens extracted.</li>
+        </ol>
+      </div>
+
+      <details class="details">
+        <summary>Troubleshooting</summary>
+        <ul>
+          <li>If checkboxes don't appear: click Rescan or scroll the sidebar, then refresh.</li>
+          <li>If Delete fails: ChatGPT changed its UI — see README debugging.</li>
+          <li>Filtered view only hides in-extension; ChatGPT search unchanged.</li>
+        </ul>
+      </details>
+    </div>
+
+    <footer class="popup-footer">
+      <span>Local only • No telemetry</span>
+      <a href="https://github.com" target="_blank" rel="noopener" id="link-help">Help</a>
+    </footer>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
